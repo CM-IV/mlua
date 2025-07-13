@@ -23,14 +23,18 @@ pub fn to_lua(input: TokenStream) -> TokenStream {
         let name_str = name.as_ref().unwrap().to_string();
         let ty = &field.ty;
 
-        let get_method = if is_copy_type(ty) {
-            quote! {
-                fields.add_field_method_get(#name_str, |_, this| Ok(this.#name));
-            }
-        } else {
-            quote! {
-                fields.add_field_method_get(#name_str, |_, this| Ok(this.#name.clone()));
-            }
+        let get_method = quote! {
+            fields.add_field_method_get(#name_str, |_, this| {
+                use facet_reflect::Peek;
+
+                let peek = Peek::new(&this.#name);
+                let vtable = peek.vtable();
+                if vtable.is_copy() {
+                    Ok(this.#name)
+                } else {
+                    Ok(this.#name.clone())
+                }
+            });
         };
 
         let set_method = quote! {
@@ -55,21 +59,4 @@ pub fn to_lua(input: TokenStream) -> TokenStream {
     };
 
     gen.into()
-}
-
-// I don't know how to determine whether or not something implements copy, so for now everything
-// will be cloned that isn't one of these copyable primitives.
-fn is_copy_type(ty: &Type) -> bool {
-    match ty {
-        Type::Path(type_path) => {
-            let segments = &type_path.path.segments;
-            let segment = segments.last().unwrap();
-            match segment.ident.to_string().as_str() {
-                "u8" | "u16" | "u32" | "u64" | "u128" | "i8" | "i16" | "i32" | "i64" | "i128" | "f32"
-                | "f64" | "bool" | "char" | "usize" | "isize" => true,
-                _ => false,
-            }
-        }
-        _ => false,
-    }
 }
